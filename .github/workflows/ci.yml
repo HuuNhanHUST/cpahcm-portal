@@ -1,0 +1,80 @@
+name: CI
+
+# Chạy trên MỌI push/PR — mục tiêu: phát hiện lỗi sớm, KHÔNG build/push Docker image ở đây
+# (việc build image để deploy chỉ làm ở cd.yml, khi code đã vào nhánh main).
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main, develop]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      # Giá trị giả — PrismaClient/NestJS cần biến này TỒN TẠI để khởi tạo, nhưng unit test
+      # (*.spec.ts) không thực sự mở kết nối tới database thật nên không cần Postgres chạy thật.
+      DATABASE_URL: "postgresql://test:test@localhost:5432/test?schema=public"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Cài dependencies
+        run: npm ci
+
+      - name: Kiểm tra ESLint
+        # continue-on-error: TẠI THỜI ĐIỂM viết pipeline này, codebase có ~181 lỗi ESLint có sẵn
+        # (chủ yếu no-unsafe-* do dùng nhiều kiểu "any" quanh Prisma) — chưa liên quan gì tới việc
+        # dựng CI/CD. Nếu chặn cứng ngay bây giờ, MỌI Pull Request sẽ đỏ ngay từ đầu, vô dụng.
+        # Việc cần làm: dọn dần số lỗi này trong 1 nhiệm vụ riêng, rồi bỏ "continue-on-error" để
+        # lint thực sự chặn merge như CI/CD roadmap đề ra.
+        continue-on-error: true
+        run: npm run lint
+
+      - name: Kiểm tra Prisma schema hợp lệ
+        run: npx prisma validate
+
+      - name: Generate Prisma Client (cần cho build/test)
+        run: npx prisma generate
+
+      - name: Build thử (bắt lỗi TypeScript)
+        run: npm run build
+
+      - name: Unit test
+        run: npm test -- --ci
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Cài dependencies
+        run: npm ci
+
+      - name: Build thử (bắt lỗi TypeScript/build)
+        # Giá trị API URL chỉ để build không lỗi — giá trị THẬT dùng lúc build Docker image
+        # production sẽ được truyền riêng ở cd.yml.
+        env:
+          NEXT_PUBLIC_API_BASE_URL: https://api.placeholder.invalid
+        run: npm run build

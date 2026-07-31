@@ -1,0 +1,5 @@
+# Bắt buộc LF (Unix line ending) cho script chạy trên server Linux — dù người commit dùng
+# Windows (autocrlf) hay editor nào, tránh lỗi "$'\r': command not found" khi thực thi trên server.
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.conf text eol=lf

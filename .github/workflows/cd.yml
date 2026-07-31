@@ -1,0 +1,111 @@
+name: CD (Production Deploy)
+
+# Chỉ chạy khi có code được merge/push thẳng vào "main" — đây là nhánh production.
+# Yêu cầu: đã cấu hình GitHub Environment tên "production" với "Required reviewers"
+# (Settings > Environments > production) — job "deploy" bên dưới sẽ DỪNG LẠI chờ
+# một người bấm Approve trước khi thực sự chạy trên server.
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: cd-production
+  cancel-in-progress: false # không huỷ ngang một lượt deploy đang chạy dở
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      tag: ${{ steps.vars.outputs.tag }}
+      image_repo: ${{ steps.vars.outputs.image_repo }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Xác định tag + tên image (registry BẮT BUỘC viết thường)
+        id: vars
+        run: |
+          echo "tag=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          echo "image_repo=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Đăng nhập GitHub Container Registry (ghcr.io)
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push image backend (runtime)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          target: runner
+          push: true
+          tags: ghcr.io/${{ steps.vars.outputs.image_repo }}-backend:${{ steps.vars.outputs.tag }}
+
+      - name: Build & push image backend (migrator — chạy "prisma migrate deploy")
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          target: migrator
+          push: true
+          tags: ghcr.io/${{ steps.vars.outputs.image_repo }}-backend:${{ steps.vars.outputs.tag }}-migrator
+
+      - name: Build & push image frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          push: true
+          # "vars.NEXT_PUBLIC_API_BASE_URL" là Repository Variable (KHÔNG phải Secret vì giá trị
+          # này không bí mật — chính là domain backend public) — cấu hình tại Settings > Secrets
+          # and variables > Actions > Variables, xem .planning/CICD_ROADMAP.md mục "cần cung cấp".
+          build-args: |
+            NEXT_PUBLIC_API_BASE_URL=${{ vars.NEXT_PUBLIC_API_BASE_URL }}
+          tags: ghcr.io/${{ steps.vars.outputs.image_repo }}-frontend:${{ steps.vars.outputs.tag }}
+
+  deploy:
+    needs: build-and-push
+    runs-on: [self-hosted, production]
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # QUAN TRỌNG: mặc định actions/checkout chạy "git clean -ffdx" trước khi checkout,
+          # sẽ XOÁ SẠCH mọi file untracked — bao gồm .env, data/uploads, data/uploads-private,
+          # backups/ đang nằm ngay trong thư mục làm việc của runner (vì đây CHÍNH LÀ server
+          # production, không phải máy build tạm). clean:false để giữ nguyên các thư mục đó.
+          clean: false
+
+      - name: Đăng nhập GitHub Container Registry (để docker compose pull được image)
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Chạy script deploy
+        env:
+          IMAGE_TAG: ${{ needs.build-and-push.outputs.tag }}
+          BACKEND_IMAGE: ghcr.io/${{ needs.build-and-push.outputs.image_repo }}-backend
+          FRONTEND_IMAGE: ghcr.io/${{ needs.build-and-push.outputs.image_repo }}-frontend
+        run: |
+          chmod +x scripts/*.sh
+          ./scripts/deploy.sh
+
+      - name: Thông báo kết quả (tuỳ chọn — chỉ chạy nếu đã cấu hình webhook)
+        if: always()
+        env:
+          WEBHOOK_URL: ${{ secrets.DEPLOY_NOTIFY_WEBHOOK_URL }}
+        run: |
+          if [ -z "${WEBHOOK_URL:-}" ]; then
+            echo "Chưa cấu hình DEPLOY_NOTIFY_WEBHOOK_URL — bỏ qua bước thông báo."
+            exit 0
+          fi
+          STATUS="${{ job.status }}"
+          curl -fsS -X POST -H 'Content-Type: application/json' \
+            -d "{\"text\": \"Deploy CPA HCM Portal — tag ${{ needs.build-and-push.outputs.tag }} — kết quả: ${STATUS}\"}" \
+            "$WEBHOOK_URL" || true

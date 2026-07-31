@@ -1,0 +1,593 @@
+// ======================================================
+// 1. CẤU HÌNH KẾT NỐI (CORE CONFIG)
+// ======================================================
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ======================================================
+// 2. MODULE TÀI KHOẢN & PHÂN QUYỀN (AUTH & RBAC)
+// ======================================================
+enum Role {
+  ADMIN    // Quản trị viên — Toàn quyền hệ thống, CMS, báo cáo
+  MEMBER   // Thành viên — Học viên, ứng viên, người dùng cá nhân
+  BUSINESS // Doanh nghiệp — Nhà tuyển dụng + khách hàng dịch vụ kế toán B2B
+}
+
+enum AuthProvider {
+  LOCAL
+  GOOGLE
+  FACEBOOK
+  LINKEDIN
+}
+
+model Company {
+  id          String     @id @default(uuid())
+  taxCode     String     @unique @map("tax_code")
+  name        String
+  address     String?
+  phone       String?
+  email       String?
+  isActive    Boolean    @default(true) @map("is_active")
+
+  // Quan hệ 1-Nhiều
+  users       User[]     // Một công ty có nhiều tài khoản truy cập
+  documents   Document[] // Một công ty có nhiều chứng từ
+  candidateIntroductionRequests CandidateIntroductionRequest[]
+
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+
+  @@map("companies")
+}
+
+// Tài khoản BUSINESS chưa được gán Company (companyId=null) tự gửi yêu cầu liên kết theo mã số
+// thuế, thay vì phải liên hệ thủ công để Admin gán tay như trước đây. Admin duyệt: nếu Company
+// theo taxCode đã tồn tại thì gán companyId cho user, chưa tồn tại thì tạo Company mới rồi gán.
+model CompanyLinkRequest {
+  id          String   @id @default(uuid())
+  taxCode     String   @map("tax_code")
+  companyName String   @map("company_name")
+  note        String?  @db.Text
+  status      String   @default("PENDING") // PENDING, APPROVED, REJECTED
+  reviewNote  String?  @map("review_note") @db.Text
+
+  userId      String   @map("user_id")
+  user        User     @relation(fields: [userId], references: [id])
+
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@map("company_link_requests")
+}
+
+model User {
+  id              String       @id @default(uuid())
+  email           String       @unique
+  password        String?      // Nullable cho Social Login users
+  fullName        String       @map("full_name")
+  phone           String?
+  avatarUrl       String?      @map("avatar_url")
+  role            Role         @default(MEMBER)
+  isActive        Boolean      @default(true) @map("is_active")
+  isEmailVerified Boolean      @default(false) @map("is_email_verified")
+  
+  // MFA (Multi-Factor Authentication)
+  mfaEnabled      Boolean      @default(false) @map("mfa_enabled")
+  
+  // Social Login
+  provider        AuthProvider @default(LOCAL)
+  providerId      String?      @map("provider_id")
+  
+  // Session Management — refresh token sessions được quản lý trên Redis (xem RedisService),
+  // không lưu ở Postgres để hỗ trợ multi-device + revoke theo session.
+  lastLoginAt      DateTime?   @map("last_login_at")
+  
+  // Khóa ngoại liên kết với Bảng Company (Dành cho role BUSINESS)
+  companyId   String?   @map("company_id")
+  company     Company?  @relation(fields: [companyId], references: [id])
+
+  // Quan hệ ngược từ các module khác
+  documents         Document[]           // Tài liệu đã upload
+  applications      JobApplication[]     // CV đã nộp
+  enrollments       CourseEnrollment[]   // Khóa học đã đăng ký
+  candidateProfiles CandidateProfile[]   // Hồ sơ ứng viên đã tạo (role MEMBER)
+  employerRequests  EmployerRequest[]    // Tin tuyển dụng đã gửi chờ duyệt (role BUSINESS)
+  companyLinkRequests CompanyLinkRequest[] // Yêu cầu liên kết Company đã gửi (role BUSINESS)
+  forumTopics       ForumTopic[]         // Chủ đề diễn đàn đã tạo
+  forumReplies      ForumReply[]         // Trả lời diễn đàn đã đăng
+  candidateIntroductionRequests CandidateIntroductionRequest[] // Yêu cầu xem liên hệ ứng viên đã gửi (role BUSINESS)
+  chatConversation  ChatConversation?    // Hội thoại chatbot tư vấn (1 user - 1 hội thoại liên tục)
+
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@index([provider, providerId])
+  @@index([companyId])
+  @@map("users")
+}
+
+// ======================================================
+// 3. MODULE DỊCH VỤ & BÁO GIÁ (SERVICE REQUESTS)
+// ======================================================
+enum DocStatus {
+  PENDING     // Vừa upload, chờ xử lý
+  PROCESSING  // Đang xử lý
+  COMPLETED   // Đã hoàn thành
+  REJECTED    // Từ chối — xem review_note để biết lý do
+}
+
+enum DocumentCategory {
+  INVOICE     // Hóa đơn
+  TAX_REPORT  // Báo cáo thuế
+  CONTRACT    // Hợp đồng
+  ACCOUNTING  // Chứng từ kế toán
+  OTHER       // Khác
+}
+
+// Chứng từ khách hàng doanh nghiệp (role BUSINESS) upload lên Cổng Khách Hàng — file lưu ở
+// thư mục riêng KHÔNG public (xem PRIVATE_UPLOADS_ROOT trong upload.config.ts), chỉ tải xuống
+// qua endpoint có xác thực JWT + kiểm tra đúng companyId, vì đây là dữ liệu tài chính nhạy cảm.
+model Document {
+  id           String           @id @default(uuid())
+  fileName     String           @map("file_name")   // tên gốc, hiển thị cho user
+  fileUrl      String           @map("file_url")     // đường dẫn nội bộ trên đĩa, KHÔNG public
+  fileType     String           @map("file_type")    // mimetype thật
+  fileSize     Int              @map("file_size")    // bytes
+  category     DocumentCategory @default(OTHER)
+  note         String?          @db.Text // ghi chú của khách hàng khi upload
+  status       DocStatus        @default(PENDING)
+  reviewNote   String?          @map("review_note") @db.Text // lý do khi REJECTED (Admin nhập)
+
+  // File kết quả Admin trả lại cho khách hàng khi xử lý xong (báo cáo, chứng từ đã hoàn thiện...)
+  // — trước đây "Hoàn tất" chỉ là 1 nhãn trạng thái, khách hàng không nhận được gì cụ thể.
+  resultFileUrl  String? @map("result_file_url")
+  resultFileName String? @map("result_file_name")
+
+  // Khóa ngoại liên kết
+  companyId    String    @map("company_id")
+  company      Company   @relation(fields: [companyId], references: [id])
+
+  uploadedById String    @map("uploaded_by_id")
+  uploadedBy   User      @relation(fields: [uploadedById], references: [id])
+
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  @@index([companyId])
+  @@index([uploadedById])
+  @@index([status])
+  @@map("documents")
+}
+
+model ServiceRequest {
+  id          String   @id @default(uuid())
+  companyName String   @map("company_name")
+  taxCode     String?  @map("tax_code") // Không bắt buộc — khách để lại lead qua form công khai, chưa chắc có sẵn ngay
+  contactName String   @map("contact_name")
+  phone       String
+  email       String
+  address     String?
+  service     String
+  message     String?  @db.Text
+  status      String   @default("NEW") // NEW, CONTACTED, QUOTED, SIGNED, REJECTED
+
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("service_requests")
+}
+
+// Nội dung mô tả dịch vụ hiển thị công khai tại /dich-vu — khác ServiceRequest (form lead/báo giá).
+model Service {
+  id              String   @id @default(uuid())
+  slug            String   @unique
+  category        String   // "Kế toán" | "Kiểm toán" | "Thuế" | "Doanh nghiệp"
+  tag             String?  // badge: "Phổ biến nhất", "Tiết kiệm 20%"...
+  title           String
+  shortDesc       String   @db.Text // mô tả ngắn cho card danh sách
+  longDescription String?  @db.Text // rich text HTML (đã sanitize) cho trang chi tiết
+  imageUrl        String?  @map("image_url")
+  features        String[] // checklist "Gói dịch vụ bao gồm"
+  deliverables    String[] // "Kết quả nhận được"
+  displayOrder    Int      @default(0) @map("display_order")
+  isActive        Boolean  @default(true) @map("is_active")
+
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@index([isActive, category])
+  @@map("services")
+}
+
+// ======================================================
+// 4. MODULE ĐÀO TẠO (CPA ACADEMY / LMS)
+// ======================================================
+model Course {
+  id              String   @id @default(uuid())
+  title           String
+  slug            String   @unique
+  category        String   @default("CPA") // "CPA" | "Kế toán trưởng" | "Kế toán tổng hợp" | "Thuế"
+  tag             String?  // "HOT", "Mới khai giảng"
+  description     String?
+  longDescription String?  @db.Text // rich text HTML (đã sanitize) — nội dung chi tiết trang [slug]
+  imageUrl        String?  @map("image_url")
+  instructor      String?  // tên giảng viên hiển thị
+  price           Decimal  @default(0)
+  originalPrice   Decimal? @map("original_price") // giá gốc gạch ngang khi có ưu đãi
+  lessons         Int      @default(0)
+  hours           Int      @default(0)
+  level           String?  // "Cơ bản" | "Nâng cao"
+  schedule        String?  // Sáng, Chiều, Tối
+  isHot           Boolean  @default(false) @map("is_hot")
+  isActive        Boolean  @default(true) @map("is_active")
+  displayOrder    Int      @default(0) @map("display_order")
+
+  modules         CourseModule[]
+  enrollments     CourseEnrollment[]
+
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@index([isActive, category])
+  @@map("courses")
+}
+
+// Giáo trình — 1 khóa có nhiều module, mỗi module có nhiều bài học.
+model CourseModule {
+  id       String @id @default(uuid())
+  courseId String @map("course_id")
+  course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  title    String
+  lessons  CourseLesson[]
+  order    Int    @default(0)
+
+  @@index([courseId])
+  @@map("course_modules")
+}
+
+// Trước đây "bài học" chỉ là 1 chuỗi text (String[] trên CourseModule) — không có nơi lưu nội
+// dung học thật (video/tài liệu). Giờ mỗi bài học là 1 bản ghi riêng, có thể gắn link video
+// (dán tay, không host video) và/hoặc 1 file PDF thật (lưu private, chỉ tải được qua endpoint có
+// kiểm tra học viên đã đăng ký + thanh toán — xem CoursesController).
+model CourseLesson {
+  id       String       @id @default(uuid())
+  moduleId String       @map("module_id")
+  module   CourseModule @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  title    String
+  videoUrl String?      @map("video_url")
+  fileUrl  String?      @map("file_url")  // đường dẫn nội bộ trên đĩa, KHÔNG public
+  fileName String?      @map("file_name") // tên gốc file, hiển thị cho học viên khi tải
+  order    Int          @default(0)
+
+  @@index([moduleId])
+  @@map("course_lessons")
+}
+
+model CourseEnrollment {
+  id          String    @id @default(uuid())
+  status      String    @default("PENDING") // PENDING, PAID, STUDYING, COMPLETED
+  
+  // Khóa ngoại
+  userId      String    @map("user_id")
+  user        User      @relation(fields: [userId], references: [id])
+  
+  courseId    String    @map("course_id")
+  course      Course    @relation(fields: [courseId], references: [id])
+
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([courseId])
+  @@map("course_enrollments")
+}
+
+// ======================================================
+// 5. MODULE TUYỂN DỤNG (ATS & JOB PORTAL)
+// ======================================================
+model JobPosting {
+  id           String    @id @default(uuid())
+  title        String
+  department   String    // Kiểm toán, Kế toán, Thuế
+  description  String
+  requirements String?
+  benefits     String?
+  imageUrl     String?   @map("image_url")
+  salary       String?
+  location     String?
+  type         String?   @default("Toàn thời gian")
+  isActive     Boolean   @default(true) @map("is_active")
+  deadline     DateTime?
+
+  applications JobApplication[]
+  employerRequests EmployerRequest[] // Yêu cầu(s) đăng tin gốc đã được xuất bản thành tin này (nếu có)
+
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  @@index([isActive])
+  @@map("job_postings")
+}
+
+model JobApplication {
+  id          String    @id @default(uuid())
+  fullName    String?   @map("full_name")
+  phone       String?
+  email       String?
+  cvUrl       String    @map("cv_url") // Link tải CV
+  status      String    @default("NEW") // NEW, REVIEWING, INTERVIEW, HIRED, REJECTED
+  
+  // Khóa ngoại
+  jobId       String    @map("job_id")
+  job         JobPosting @relation(fields: [jobId], references: [id])
+  
+  userId      String?   @map("user_id")
+  user        User?     @relation(fields: [userId], references: [id])
+
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([jobId])
+  @@index([userId])
+  @@map("job_applications")
+}
+
+model CandidateProfile {
+  id              String      @id @default(uuid())
+  fullName        String      @map("full_name")
+  phone           String
+  email           String
+  address         String?
+  desiredPosition String      @map("desired_position")
+  desiredLevel    String      @map("desired_level")
+  location        String
+  industry        String
+  educationLevel  String      @map("education_level")
+  experienceYears String      @map("experience_years")
+  workType        String      @map("work_type")
+  minSalary       Decimal?    @map("min_salary")
+  maxSalary       Decimal?    @map("max_salary")
+  careerGoal      String?     @map("career_goal")
+  computerSkills  String?     @map("computer_skills")
+  languages       String?
+  cvUrl           String?     @map("cv_url")
+  status          String      @default("ACTIVE") // ACTIVE, HIRED, INACTIVE
+
+  // Tài khoản đã tạo hồ sơ này (bắt buộc đăng nhập mới tạo được — xem RecruitmentController)
+  userId          String?     @map("user_id")
+  user            User?       @relation(fields: [userId], references: [id])
+
+  experiences     CandidateExperience[]
+  educations      CandidateEducation[]
+  references      CandidateReference[]
+  introductionRequests CandidateIntroductionRequest[]
+
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
+
+  // Mỗi user tối đa 1 hồ sơ ứng viên (RecruitmentService.createCandidateProfile chặn tạo hồ sơ thứ
+  // 2 ở tầng service, nhưng check-rồi-tạo không atomic — 2 request gần như đồng thời có thể cùng
+  // vượt qua check trước khi request kia kịp insert, tạo 2 hồ sơ trùng). Ràng buộc unique ở DB
+  // chặn triệt để bất kể race, không phụ thuộc code tầng service. NULL (hồ sơ chưa gắn user, nếu
+  // có) không bị tính trùng nhau — đúng ngữ nghĩa Postgres cho unique index trên cột nullable.
+  @@unique([userId])
+  @@map("candidate_profiles")
+}
+
+// BUSINESS xem được kho hồ sơ ứng viên (CandidateProfile) nhưng SĐT/email bị ẩn cho tới khi Admin
+// duyệt yêu cầu này — giữ vai trò trung gian của CPA HCM (đúng mô hình headhunting: doanh nghiệp tự
+// tìm hồ sơ phù hợp, nhưng liên hệ trực tiếp phải qua CPA HCM xét duyệt), thay vì lộ PII ứng viên
+// (SĐT/email tuyển dụng dùng nhận CV) cho bất kỳ tài khoản BUSINESS nào chỉ bằng cách gọi API.
+model CandidateIntroductionRequest {
+  id                 String   @id @default(uuid())
+  candidateProfileId String   @map("candidate_profile_id")
+  candidateProfile   CandidateProfile @relation(fields: [candidateProfileId], references: [id], onDelete: Cascade)
+  companyId          String   @map("company_id")
+  company            Company  @relation(fields: [companyId], references: [id])
+  requestedById      String   @map("requested_by_id")
+  requestedBy        User     @relation(fields: [requestedById], references: [id])
+  status             String   @default("PENDING") // PENDING, APPROVED, REJECTED
+  note               String?  @db.Text // Doanh nghiệp mô tả vị trí đang cần khi gửi yêu cầu
+  reviewNote         String?  @map("review_note") @db.Text
+
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  // 1 công ty chỉ cần gửi 1 yêu cầu cho 1 hồ sơ — chặn spam gửi lại nhiều lần cho cùng ứng viên.
+  @@unique([candidateProfileId, companyId])
+  @@index([companyId])
+  @@index([candidateProfileId])
+  @@map("candidate_introduction_requests")
+}
+
+model CandidateExperience {
+  id          String           @id @default(uuid())
+  profileId   String           @map("profile_id")
+  profile     CandidateProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  company     String
+  position    String
+  startDate   DateTime?        @map("start_date")
+  endDate     DateTime?        @map("end_date")
+  salary      String?
+  description String?
+
+  @@index([profileId])
+  @@map("candidate_experiences")
+}
+
+model CandidateEducation {
+  id          String           @id @default(uuid())
+  profileId   String           @map("profile_id")
+  profile     CandidateProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  degree      String
+  school      String
+  major       String?
+  grade       String?
+  gradYear    Int?             @map("grad_year")
+
+  @@index([profileId])
+  @@map("candidate_educations")
+}
+
+model CandidateReference {
+  id        String           @id @default(uuid())
+  profileId String           @map("profile_id")
+  profile   CandidateProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  fullName  String           @map("full_name")
+  company   String?
+  position  String?
+  phone     String?
+
+  @@index([profileId])
+  @@map("candidate_references")
+}
+
+model EmployerRequest {
+  id             String   @id @default(uuid())
+  companyName    String   @map("company_name")
+  contactName    String   @map("contact_name")
+  phone          String
+  email          String
+  position       String
+  expectedSalary String?  @map("expected_salary")
+  jobDescription String?  @map("job_description")
+  status         String   @default("PENDING") // PENDING, CONTACTED, IN_PROGRESS, CLOSED
+
+  // Tài khoản Doanh nghiệp (role BUSINESS) đã gửi tin — hàng đợi chờ Admin duyệt & xuất bản
+  // thành JobPosting thật (xem AdminService.createJobPosting / RecruitmentController).
+  userId         String?  @map("user_id")
+  user           User?    @relation(fields: [userId], references: [id])
+
+  // Tin JobPosting thật đã xuất bản từ yêu cầu này (nếu có) — để BUSINESS tự theo dõi ở
+  // "Tin Tuyển Dụng Đã Gửi" (GET /recruitment/employer-requests/me) biết chính xác tin đã lên
+  // trang công khai hay chưa, thay vì chỉ thấy trạng thái PENDING treo mãi không rõ kết quả.
+  publishedJobId String?  @map("published_job_id")
+  publishedJob   JobPosting? @relation(fields: [publishedJobId], references: [id])
+
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@index([publishedJobId])
+  @@map("employer_requests")
+}
+
+// ======================================================
+// 6. MODULE QUẢN TRỊ NỘI DUNG (CMS)
+// ======================================================
+model Post {
+  id          String    @id @default(uuid())
+  title       String
+  slug        String    @unique
+  content     String    @db.Text // Markdown, render ở FE qua react-markdown
+  excerpt     String?   @db.Text // Tóm tắt ngắn cho card danh sách
+  category    String    // Tin tức, Pháp lý, Thông báo
+  imageUrl    String?   @map("image_url") // Ảnh cover, /uploads/posts/*
+  viewCount   Int       @default(0) @map("view_count")
+  isPublished Boolean   @default(true) @map("is_published")
+
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@index([isPublished, category])
+  @@map("posts")
+}
+
+// ======================================================
+// 7. MODULE DIỄN ĐÀN (FORUM)
+// ======================================================
+model ForumCategory {
+  id           String       @id @default(uuid())
+  name         String
+  slug         String       @unique
+  description  String?
+  displayOrder Int          @default(0) @map("display_order")
+  isActive     Boolean      @default(true) @map("is_active")
+
+  topics       ForumTopic[]
+
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+
+  @@map("forum_categories")
+}
+
+model ForumTopic {
+  id         String        @id @default(uuid())
+  title      String
+  slug       String        @unique
+  content    String        @db.Text // sanitize-html trước khi lưu (giống Service/Course longDescription)
+  viewCount  Int           @default(0) @map("view_count")
+  isPinned   Boolean       @default(false) @map("is_pinned")
+  isLocked   Boolean       @default(false) @map("is_locked") // khóa: chặn reply mới (trừ ADMIN)
+
+  categoryId String        @map("category_id")
+  category   ForumCategory @relation(fields: [categoryId], references: [id])
+
+  authorId   String        @map("author_id")
+  author     User          @relation(fields: [authorId], references: [id])
+
+  replies    ForumReply[]
+
+  createdAt  DateTime      @default(now()) @map("created_at")
+  updatedAt  DateTime      @updatedAt @map("updated_at")
+
+  @@index([categoryId])
+  @@index([authorId])
+  @@map("forum_topics")
+}
+
+model ForumReply {
+  id        String     @id @default(uuid())
+  content   String     @db.Text
+
+  topicId   String     @map("topic_id")
+  topic     ForumTopic @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  authorId  String     @map("author_id")
+  author    User       @relation(fields: [authorId], references: [id])
+
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
+
+  @@index([topicId])
+  @@index([authorId])
+  @@map("forum_replies")
+}
+
+// ======================================================
+// 8. MODULE CHATBOT TƯ VẤN DỊCH VỤ (AI/LLM)
+// ======================================================
+// Lưu lại lịch sử hội thoại để: (1) duy trì ngữ cảnh nhiều lượt xuyên suốt các lần đăng nhập,
+// (2) Admin xem lại chất lượng trả lời của bot, gắn với đúng user/doanh nghiệp đã hỏi. Chatbot
+// yêu cầu đăng nhập (không còn sessionId ẩn danh) — mỗi user có đúng 1 hội thoại liên tục.
+model ChatConversation {
+  id        String        @id @default(uuid())
+  userId    String        @unique @map("user_id")
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages  ChatMessage[]
+
+  createdAt DateTime      @default(now()) @map("created_at")
+  updatedAt DateTime      @updatedAt @map("updated_at")
+
+  @@map("chat_conversations")
+}
+
+model ChatMessage {
+  id             String           @id @default(uuid())
+  role           String           // "user" | "assistant"
+  content        String           @db.Text
+
+  conversationId String           @map("conversation_id")
+  conversation   ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  createdAt      DateTime         @default(now()) @map("created_at")
+
+  @@index([conversationId])
+  @@map("chat_messages")
+}

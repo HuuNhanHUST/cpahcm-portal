@@ -1,0 +1,228 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --background: #ffffff;
+    --foreground: #333333;
+
+    --card: #ffffff;
+    --card-foreground: #333333;
+
+    --popover: #ffffff;
+    --popover-foreground: #333333;
+
+    --primary: #1b3a8f;
+    --primary-foreground: #ffffff;
+
+    --secondary: #f3f4f6;
+    --secondary-foreground: #111827;
+
+    --muted: #f8f9fa;
+    --muted-foreground: #6b7280;
+
+    --accent: #c9973c;
+    --accent-foreground: #ffffff;
+
+    --destructive: #ef4444;
+    --destructive-foreground: #f9fafb;
+
+    --border: #e5e7eb;
+    --input: #e5e7eb;
+    --ring: #1b3a8f;
+
+    --radius: 0.5rem;
+
+    --cpa-navy: #1b3a8f;
+    --cpa-navy-light: #2c54c1;
+    --cpa-gold: #c9973c;
+    --cpa-gold-light: #e5b356;
+    --cpa-slate: #f8f9fa;
+  }
+}
+
+@theme {
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+
+  --color-cpa-navy: var(--cpa-navy);
+  --color-cpa-navy-light: var(--cpa-navy-light);
+  --color-cpa-gold: var(--cpa-gold);
+  --color-cpa-gold-light: var(--cpa-gold-light);
+  --color-cpa-slate: var(--cpa-slate);
+
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+}
+
+@layer utilities {
+  .section-bg-light {
+    background-color: #f8f9fa;
+  }
+
+  .section-bg-white {
+    background-color: #ffffff;
+  }
+
+  .text-glow-gold {
+    text-shadow: 0 0 10px rgba(201, 151, 60, 0.3);
+  }
+
+  .bg-gradient-gold {
+    background: linear-gradient(135deg, #c9973c 0%, #e5b356 50%, #b2812d 100%);
+  }
+
+  .bg-gradient-navy {
+    background: linear-gradient(135deg, #1b3a8f 0%, #2c54c1 50%, #0f1f4e 100%);
+  }
+
+  .card-shadow {
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  }
+
+  .card-shadow-hover {
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  }
+
+  /* --- Editorial B2B language: data-forward, restrained accents --- */
+
+  /* Subtle line-grid backdrop for dark navy surfaces — replaces stock-photo hero glow */
+  .bg-grid-navy {
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
+    background-size: 48px 48px;
+  }
+
+  /* Duotone-navy photo treatment: real photography, corporate tone, no raw stock-photo color */
+  .duotone-navy {
+    filter: grayscale(1) contrast(1.05);
+  }
+  .duotone-navy-overlay {
+    background: linear-gradient(180deg, rgba(15, 28, 71, 0.75), rgba(15, 28, 71, 0.55));
+    mix-blend-mode: multiply;
+  }
+
+  /* Tabular figures for stat blocks — numbers align, reads as "reported data" not marketing copy */
+  .stat-figure {
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+  }
+
+  /* Typography for rendered Markdown article bodies (Tin tức detail page) — no @tailwindcss/typography
+     plugin installed, so heading/paragraph/list/link styles are hand-set here to match the site's
+     navy/gold editorial palette instead of Tailwind's default prose gray. */
+  .prose-cpa h1, .prose-cpa h2, .prose-cpa h3 {
+    color: #0F1C47;
+    font-weight: 800;
+    margin-top: 1.75em;
+    margin-bottom: 0.6em;
+    line-height: 1.25;
+  }
+  .prose-cpa h1 { font-size: 1.75rem; }
+  .prose-cpa h2 { font-size: 1.4rem; }
+  .prose-cpa h3 { font-size: 1.15rem; }
+  .prose-cpa p {
+    margin-bottom: 1.1em;
+    line-height: 1.75;
+    color: #374151;
+  }
+  .prose-cpa ul, .prose-cpa ol {
+    margin-bottom: 1.1em;
+    padding-left: 1.5em;
+    line-height: 1.75;
+    color: #374151;
+  }
+  .prose-cpa ul { list-style-type: disc; }
+  .prose-cpa ol { list-style-type: decimal; }
+  .prose-cpa li { margin-bottom: 0.4em; }
+  .prose-cpa a {
+    color: #1B3A8F;
+    font-weight: 600;
+    text-decoration: underline;
+    text-decoration-color: #C9973C;
+  }
+  .prose-cpa strong { color: #0F1C47; font-weight: 700; }
+  .prose-cpa blockquote {
+    border-left: 3px solid #C9973C;
+    padding-left: 1em;
+    margin: 1.5em 0;
+    color: #6B7280;
+    font-style: italic;
+  }
+  .prose-cpa img {
+    border-radius: 2px;
+    margin: 1.5em 0;
+  }
+  .prose-cpa code {
+    background: #F4F6F9;
+    padding: 0.15em 0.4em;
+    border-radius: 3px;
+    font-size: 0.9em;
+  }
+
+  /* Markdown compact cho bong bóng chat (ChatWidget) — không dùng lại .prose-cpa vì margin/line-height
+     của nó (thiết kế cho thân bài viết full-width) quá rộng, xuống dòng lãng phí trong bong bóng
+     hẹp 340px/13px chữ, khiến câu trả lời ngắn trông dài lê thê. */
+  .prose-chat { font-size: 13px; line-height: 1.55; }
+  .prose-chat p { margin-bottom: 0.6em; }
+  .prose-chat p:last-child { margin-bottom: 0; }
+  .prose-chat h1, .prose-chat h2, .prose-chat h3 {
+    color: #0F1C47;
+    font-weight: 800;
+    font-size: 0.95em;
+    margin-top: 0.8em;
+    margin-bottom: 0.35em;
+  }
+  .prose-chat h1:first-child, .prose-chat h2:first-child, .prose-chat h3:first-child { margin-top: 0; }
+  .prose-chat ul, .prose-chat ol {
+    margin-bottom: 0.6em;
+    padding-left: 1.2em;
+  }
+  .prose-chat ul { list-style-type: disc; }
+  .prose-chat ol { list-style-type: decimal; }
+  .prose-chat li { margin-bottom: 0.2em; }
+  .prose-chat strong { color: #0F1C47; font-weight: 700; }
+  .prose-chat a { color: #1B3A8F; font-weight: 600; text-decoration: underline; text-decoration-color: #C9973C; }
+  .prose-chat code { background: #F4F6F9; padding: 0.1em 0.35em; border-radius: 3px; font-size: 0.9em; }
+  .prose-chat hr { border-color: #E5E7EB; margin: 0.6em 0; }
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  overflow-x: hidden;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--background);
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}

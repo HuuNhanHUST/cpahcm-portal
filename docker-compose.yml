@@ -1,0 +1,140 @@
+# Dùng chung được cho cả máy dev và server production:
+# - Dev / build thủ công trên server: `docker compose build` sẽ dùng phần "build:" bên dưới.
+# - Production qua CI/CD: `docker compose pull` sẽ tải sẵn image đã build từ GitHub Container
+#   Registry (ghcr.io) theo đúng tag ${IMAGE_TAG}, KHÔNG build lại trên server (nhanh & an toàn hơn).
+#
+# Biến môi trường (POSTGRES_*, IMAGE_TAG, NEXT_PUBLIC_API_BASE_URL...) đọc từ file ".env" cùng cấp
+# — copy từ ".env.example" rồi điền giá trị thật, KHÔNG commit ".env" vào Git.
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    # Chỉ bind vào 127.0.0.1 (loopback) — máy dev vẫn kết nối được qua "localhost:5432" như cũ,
+    # nhưng trên server production sẽ KHÔNG ai từ mạng ngoài truy cập trực tiếp được cổng này.
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Job chạy MỘT LẦN để áp dụng Prisma migration — KHÔNG tự khởi động khi `docker compose up`,
+  # chỉ chạy khi pipeline CD (hoặc người vận hành) gọi rõ ràng:
+  #   docker compose run --rm backend-migrate
+  # Chạy xong tự thoát (exit 0 nếu OK, khác 0 nếu lỗi) — script deploy dựa vào exit code này
+  # để quyết định có tiếp tục cập nhật service "backend" hay dừng lại (xem scripts/deploy.sh).
+  backend-migrate:
+    build:
+      context: ./backend
+      target: migrator
+    image: ${BACKEND_IMAGE:-ghcr.io/OWNER/REPO-backend}:${IMAGE_TAG:-local}-migrator
+    env_file:
+      - ./backend/.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - internal
+    profiles: ["migrate"]
+
+  backend:
+    build:
+      context: ./backend
+      target: runner
+    image: ${BACKEND_IMAGE:-ghcr.io/OWNER/REPO-backend}:${IMAGE_TAG:-local}
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      NODE_ENV: production
+    # Bind mount ra ngoài container — file KHÔNG BAO GIỜ mất khi deploy bản mới, vì thư mục
+    # ./data/uploads nằm trên đĩa server, độc lập hoàn toàn với vòng đời container.
+    # TUYỆT ĐỐI không chạy "docker compose down -v" hay xoá volume này trong bất kỳ script nào.
+    volumes:
+      - ./data/uploads:/app/uploads
+      - ./data/uploads-private:/app/uploads-private
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/api/v1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL}
+    image: ${FRONTEND_IMAGE:-ghcr.io/OWNER/REPO-frontend}:${IMAGE_TAG:-local}
+    restart: unless-stopped
+    depends_on:
+      - backend
+    networks:
+      - internal
+
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/certbot/conf:/etc/letsencrypt:ro
+      - ./nginx/certbot/www:/var/www/certbot:ro
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - internal
+
+  # Tự động gia hạn SSL certificate (Let's Encrypt hết hạn sau 90 ngày). Container này chạy
+  # xong lệnh renew rồi tự thoát — dùng cron trên host gọi `docker compose run --rm certbot`
+  # định kỳ (VD 1 lần/ngày), KHÔNG cần chạy liên tục 24/7.
+  certbot:
+    image: certbot/certbot
+    volumes:
+      - ./nginx/certbot/conf:/etc/letsencrypt
+      - ./nginx/certbot/www:/var/www/certbot
+    entrypoint: "certbot renew --webroot -w /var/www/certbot --quiet"
+    profiles: ["certbot"]
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
