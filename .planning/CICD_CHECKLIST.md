@@ -8,18 +8,14 @@
 
 ## A. Thông tin cần cung cấp (trả lời câu hỏi)
 
-- [ ] **1. Bạn đã có GitHub repository chưa?**
-  Repo hiện tại **chưa có git remote nào** (`git remote -v` trống). Cần:
-  - Tên tổ chức/tài khoản GitHub sẽ chứa repo (vd. `cpahcm` hay tài khoản cá nhân?)
-  - Repo public hay private?
-  - → Sau khi có, cho tôi biết URL để tôi hướng dẫn bước push chính xác.
+- [x] **1. Bạn đã có GitHub repository chưa?** — **XONG.** Repo: [HuuNhanHUST/cpahcm-portal](https://github.com/HuuNhanHUST/cpahcm-portal) (Public — đổi từ Private để dùng được "Required reviewers" miễn phí, đã kiểm tra kỹ không có secret nào bị lộ trước khi đổi). Code đã push lên nhánh `main`.
 
 - [ ] **2. Thông tin server vật lý (on-prem)**
   - Hệ điều hành server là gì? (Ubuntu 22.04? Debian? CentOS?) — lệnh cài Docker khác nhau tuỳ hệ điều hành.
   - Server đã cài Docker chưa, hay cần cài từ đầu?
   - Bạn (hoặc ai) có quyền truy cập SSH/console vào server đó để chạy lệnh không? Tôi **không** có quyền truy cập server thật, chỉ có thể viết sẵn lệnh/script để bạn (hoặc người quản trị) tự chạy.
 
-- [ ] **3. Domain thật**
+- [ ] **3. Domain thật** *(NEXT_PUBLIC_API_BASE_URL đang tạm để `https://api.your-domain.com` — cần sửa lại khi có domain thật)*
   - Domain sẽ dùng cho website là gì? (vd. `cpahcm.vn`, `portal.cpahcm.vn`...)
   - Domain đã có sẵn/đã mua chưa? Đã trỏ DNS (bản ghi A) về IP server công ty chưa?
   - Email dùng để đăng ký SSL Let's Encrypt (certbot) là gì?
@@ -36,17 +32,13 @@
 
 ## B. Việc cần bạn (hoặc người quản trị hệ thống) tự thực hiện
 
-### B1. Trên GitHub (làm được ngay, không cần server)
+### B1. Trên GitHub — ĐÃ TỰ ĐỘNG HOÀN THÀNH (qua `gh` CLI + GitHub API, 2026-07-31)
 
-- [ ] Tạo repository mới, sau đó chạy (thay `<url>` bằng URL repo thật):
-  ```
-  git remote add origin <url>
-  git push -u origin master   # hoặc đổi tên nhánh chính thành "main" trước khi push nếu muốn
-  ```
-- [ ] Vào **Settings > Environments** → tạo environment tên `production` → bật **"Required reviewers"**, thêm người sẽ bấm duyệt deploy.
-- [ ] Vào **Settings > Secrets and variables > Actions > Variables** → thêm `NEXT_PUBLIC_API_BASE_URL` = domain backend thật (vd. `https://api.cpahcm.vn`).
-- [ ] (Nếu chọn có ở mục A.4) Vào **Settings > Secrets and variables > Actions > Secrets** → thêm `DEPLOY_NOTIFY_WEBHOOK_URL`.
-- [ ] Vào **Settings > Branches** → thêm rule bảo vệ nhánh `main`: bắt buộc Pull Request + status check `CI` phải pass mới merge được.
+- [x] Repo tạo xong, code đã push: [HuuNhanHUST/cpahcm-portal](https://github.com/HuuNhanHUST/cpahcm-portal), nhánh `main`.
+- [x] Environment `production` đã tạo, **Required reviewers** = `HuuNhanHUST`.
+- [x] Repository Variable `NEXT_PUBLIC_API_BASE_URL` = `https://api.your-domain.com` (placeholder — **cần bạn sửa lại giá trị thật** bằng `gh variable set NEXT_PUBLIC_API_BASE_URL --repo HuuNhanHUST/cpahcm-portal --body "https://domain-that-cua-ban"` khi có domain, xem mục A.3).
+- [ ] `DEPLOY_NOTIFY_WEBHOOK_URL` — chưa thêm, chờ câu trả lời mục A.4.
+- [x] Branch protection cho `main`: bắt buộc 2 status check `backend` + `frontend` (tên job trong `ci.yml`) phải pass mới merge được.
 
 ### B2. Trên server vật lý (cần quyền truy cập server thật)
 
