@@ -15,11 +15,9 @@
   - Server đã cài Docker chưa, hay cần cài từ đầu?
   - Bạn (hoặc ai) có quyền truy cập SSH/console vào server đó để chạy lệnh không? Tôi **không** có quyền truy cập server thật, chỉ có thể viết sẵn lệnh/script để bạn (hoặc người quản trị) tự chạy.
 
-- [ ] **3. Domain thật** *(NEXT_PUBLIC_API_BASE_URL đang tạm để `https://api.your-domain.com` — cần sửa lại khi có domain thật)*
-  - Domain sẽ dùng cho website là gì? (vd. `cpahcm.vn`, `portal.cpahcm.vn`...)
-  - Domain đã có sẵn/đã mua chưa? Đã trỏ DNS (bản ghi A) về IP server công ty chưa?
-  - Email dùng để đăng ký SSL Let's Encrypt (certbot) là gì?
-  - → Cần điền vào: `nginx/nginx.conf` (2 chỗ `your-domain.com`), `.env` root (`DOMAIN`, `CERTBOT_EMAIL`, `NEXT_PUBLIC_API_BASE_URL`).
+- [x] **3. Domain thật — XONG một phần.** Domain: `cpahcm.com.vn` (dùng lại domain web cũ, thay thế hoàn toàn). Đã cập nhật `nginx.conf`, `.env.example`, GitHub Variable. DNS quản lý qua PA Việt Nam, có MX thật (không được đụng).
+  - [ ] **Còn thiếu**: ai đang giữ tài khoản đăng nhập PA Việt Nam của domain này (vendor cũ hay công ty tự giữ)? Cần để thực hiện đổi DNS lúc cutover.
+  - [ ] **Còn thiếu**: email thật dùng để đăng ký SSL Let's Encrypt (đang để placeholder `admin@cpahcm.com.vn` trong `.env.example` — xác nhận đây có phải hộp mail thật đang theo dõi không).
 
 - [ ] **4. Có muốn nhận thông báo deploy qua Slack/Telegram không?**
   - Nếu có: cần Webhook URL (Slack Incoming Webhook hoặc Telegram Bot API) để tôi điền vào GitHub Secret `DEPLOY_NOTIFY_WEBHOOK_URL`.
@@ -36,16 +34,18 @@
 
 - [x] Repo tạo xong, code đã push: [HuuNhanHUST/cpahcm-portal](https://github.com/HuuNhanHUST/cpahcm-portal), nhánh `main`.
 - [x] Environment `production` đã tạo, **Required reviewers** = `HuuNhanHUST`.
-- [x] Repository Variable `NEXT_PUBLIC_API_BASE_URL` = `https://api.your-domain.com` (placeholder — **cần bạn sửa lại giá trị thật** bằng `gh variable set NEXT_PUBLIC_API_BASE_URL --repo HuuNhanHUST/cpahcm-portal --body "https://domain-that-cua-ban"` khi có domain, xem mục A.3).
+- [x] Repository Variable `NEXT_PUBLIC_API_BASE_URL` = `https://cpahcm.com.vn` (domain thật, đã cập nhật 2026-07-31).
 - [ ] `DEPLOY_NOTIFY_WEBHOOK_URL` — chưa thêm, chờ câu trả lời mục A.4.
 - [x] Branch protection cho `main`: bắt buộc 2 status check `backend` + `frontend` (tên job trong `ci.yml`) phải pass mới merge được.
 
 ### B2. Trên server vật lý (cần quyền truy cập server thật)
 
-- [ ] Cài Docker Engine + Docker Compose plugin.
-- [ ] Tạo user riêng để deploy (không dùng `root`), chỉ cho SSH đăng nhập bằng key.
-- [ ] Cấu hình firewall (UFW): chỉ mở cổng 22 (SSH), 80, 443.
-- [ ] Cài `fail2ban`.
+**Công ty đã báo yếu về bảo mật, cần dựng server từ đầu — đã chuẩn bị sẵn 2 script tự động** (giả định Ubuntu/Debian, báo lại nếu server dùng hệ điều hành khác để tôi viết lại cho đúng):
+
+- [ ] Xin IT tài khoản có quyền sudo/root ban đầu để chạy script (xem hướng dẫn xin SSH key ở trên).
+- [ ] Chạy `sudo ./scripts/server-bootstrap-1-setup.sh` — tự động: tạo user `deploy` + thêm SSH key, cài UFW (chỉ mở 22/80/443), cài `fail2ban`, cài Docker Engine + Compose. **Không** tắt đăng nhập mật khẩu/root ở bước này (tránh khoá nhầm quyền truy cập).
+- [ ] **Mở cửa sổ terminal MỚI**, tự test đăng nhập `ssh -i cpahcm_deploy_key deploy@<ip-server>` — phải vào được KHÔNG cần mật khẩu.
+- [ ] Chỉ khi bước trên chắc chắn thành công: chạy `sudo ./scripts/server-bootstrap-2-harden-ssh.sh` để tắt hẳn đăng nhập bằng mật khẩu + root (bước này không thể hoàn tác dễ dàng nếu key không hoạt động, nên bắt buộc xác nhận thủ công trước).
 - [ ] Clone repo về server (vào đúng thư mục sẽ dùng làm nơi chạy `docker-compose.yml` lâu dài — đây cũng chính là thư mục self-hosted runner sẽ dùng, xem B3).
 - [ ] Copy `.env.example` (root) → `.env`, điền giá trị thật:
   - `POSTGRES_PASSWORD` — mật khẩu mạnh, khác với giá trị cũ `CpaHcm_Password_2026!` đang lộ trong lịch sử code.

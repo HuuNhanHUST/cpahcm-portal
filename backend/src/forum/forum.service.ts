@@ -150,7 +150,7 @@ export class ForumService {
     }
 
     const slug = await this.generateUniqueTopicSlug(dto.title);
-    return this.prisma.forumTopic.create({
+    const topic = await this.prisma.forumTopic.create({
       data: {
         title: dto.title,
         slug,
@@ -160,6 +160,11 @@ export class ForumService {
       },
       include: { category: true, author: { select: AUTHOR_SELECT } },
     });
+    // Xoá cache danh sách (mọi trang/danh mục/từ khoá) để chủ đề mới hiện ra ngay, không phải
+    // đợi hết TTL 60s — khác với Service/Course chỉnh sửa hiếm khi, diễn đàn có nội dung mới
+    // liên tục nên staleness 60s bị người dùng nhận ra rõ rệt hơn nhiều.
+    await this.redis.delByPrefix('forum:topics:');
+    return topic;
   }
 
   private assertCanModify(
@@ -204,7 +209,9 @@ export class ForumService {
     this.assertCanModify(topic.authorId, currentUserId, currentUserRole);
     // Xóa topic cascade xóa toàn bộ reply (onDelete: Cascade trong schema) — chấp nhận được vì
     // đây là nội dung diễn đàn, không cần giữ lịch sử audit như CourseEnrollment.
-    return this.prisma.forumTopic.delete({ where: { id } });
+    const deleted = await this.prisma.forumTopic.delete({ where: { id } });
+    await this.redis.delByPrefix('forum:topics:');
+    return deleted;
   }
 
   async createReply(
@@ -221,7 +228,7 @@ export class ForumService {
       throw new ForbiddenException('Chủ đề đã bị khóa, không thể trả lời.');
     }
 
-    return this.prisma.forumReply.create({
+    const reply = await this.prisma.forumReply.create({
       data: {
         content: sanitizeRichText(dto.content) ?? '',
         topicId,
@@ -229,6 +236,12 @@ export class ForumService {
       },
       include: { author: { select: AUTHOR_SELECT } },
     });
+    // Xoá cache danh sách — số "replies" hiển thị ở trang danh sách (_count.replies) mới được
+    // tính lại ngay, không lệch với trang chi tiết (không cache, luôn đọc số thật) tới 60s như
+    // trước — đây chính là bug người dùng gặp: danh sách hiện "0 replies" dù trang chi tiết đã
+    // có reply thật.
+    await this.redis.delByPrefix('forum:topics:');
+    return reply;
   }
 
   async updateReply(
@@ -252,7 +265,9 @@ export class ForumService {
     const reply = await this.prisma.forumReply.findUnique({ where: { id } });
     if (!reply) throw new NotFoundException('Trả lời không tồn tại.');
     this.assertCanModify(reply.authorId, currentUserId, currentUserRole);
-    return this.prisma.forumReply.delete({ where: { id } });
+    const deleted = await this.prisma.forumReply.delete({ where: { id } });
+    await this.redis.delByPrefix('forum:topics:');
+    return deleted;
   }
 
   // ── Admin: quản lý danh mục ─────────────────────────────────────────────

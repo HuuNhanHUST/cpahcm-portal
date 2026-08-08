@@ -152,39 +152,48 @@ export default function HomePage() {
       .finally(() => setCoursesLoading(false));
   }, []);
 
+  // "href" trỏ đúng slug THẬT trong bảng services (không phải "id" ở đây — id chỉ dùng làm key
+  // hiển thị số thứ tự). "giao-dich-lien-ket" chưa có Service tương ứng trong DB nên trỏ tạm về
+  // trang danh sách /dich-vu thay vì 1 slug không tồn tại (tránh 404).
   const services = [
     {
       id: "ke-toan",
+      href: "/dich-vu/dich-vu-ke-toan-tron-goi",
       title: t("home.service2Title"),
       desc: t("home.service2Desc"),
       icon: Calculator,
     },
     {
       id: "thanh-lap",
+      href: "/dich-vu/thanh-lap-doanh-nghiep",
       title: t("services.biz"),
       desc: t("services.bizDesc"),
       icon: Building2,
     },
     {
       id: "tu-van-thue",
+      href: "/dich-vu/tu-van-thue-doanh-nghiep",
       title: t("home.service3Title"),
       desc: t("home.service3Desc"),
       icon: Receipt,
     },
     {
       id: "giao-dich-lien-ket",
+      href: "/dich-vu",
       title: t("home.service4Title"),
       desc: t("home.service4Desc"),
       icon: Network,
     },
     {
       id: "kiem-toan",
+      href: "/dich-vu/dich-vu-kiem-toan-doc-lap",
       title: t("home.service1Title"),
       desc: t("home.service1Desc"),
       icon: ShieldCheck,
     },
     {
       id: "dao-tao",
+      href: "/dao-tao",
       title: t("footer.training"),
       desc: t("home.service6Desc"),
       icon: GraduationCap,
@@ -302,8 +311,7 @@ export default function HomePage() {
         <section className="py-16 bg-white border-b border-gray-100 overflow-hidden relative">
           <motion.div
             initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true, margin: "-50px" }}
+            animate="visible"
             variants={fadeIn}
             className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-10 text-center"
           >
@@ -423,8 +431,7 @@ export default function HomePage() {
           <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <motion.div 
               initial="hidden"
-              whileInView="visible"
-              viewport={{ once: true, margin: "-100px" }}
+              animate="visible"
               variants={fadeIn}
               className="mb-16 flex flex-col md:flex-row md:items-end justify-between gap-8"
             >
@@ -444,44 +451,44 @@ export default function HomePage() {
 
             <motion.div 
               initial="hidden"
-              whileInView="visible"
-              viewport={{ once: true, margin: "-50px" }}
+              animate="visible"
               variants={staggerContainer}
               className="grid md:grid-cols-2 lg:grid-cols-3 gap-6"
             >
               {services.map((srv, idx) => (
-                <motion.div
-                  key={idx}
-                  variants={fadeIn}
-                  className="group bg-white p-8 lg:p-10 rounded-sm border border-gray-100 shadow-sm hover:shadow-2xl hover:shadow-[#1B3A8F]/10 hover:-translate-y-1.5 transition-all duration-300 relative overflow-hidden"
-                >
-                  {/* Vệt accent trên đầu thẻ khi hover — nhất quán với thẻ Khóa học/Tin tức */}
-                  <div className="absolute top-0 left-0 h-[3px] w-0 bg-gradient-to-r from-[#C9973C] to-[#1B3A8F] group-hover:w-full transition-all duration-500" />
+                <motion.div key={idx} variants={fadeIn}>
+                  <Link
+                    href={srv.href}
+                    className="group block h-full bg-white p-8 lg:p-10 rounded-sm border border-gray-100 shadow-sm hover:shadow-2xl hover:shadow-[#1B3A8F]/10 hover:-translate-y-1.5 transition-all duration-300 relative overflow-hidden"
+                  >
+                    {/* Vệt accent trên đầu thẻ khi hover — nhất quán với thẻ Khóa học/Tin tức */}
+                    <div className="absolute top-0 left-0 h-[3px] w-0 bg-gradient-to-r from-[#C9973C] to-[#1B3A8F] group-hover:w-full transition-all duration-500" />
 
-                  {/* Number watermark — editorial magazine cue */}
-                  <span className="absolute top-4 right-6 text-6xl font-black text-gray-50 select-none leading-none">
-                    {String(idx + 1).padStart(2, "0")}
-                  </span>
-
-                  <div className="w-16 h-16 bg-gradient-to-br from-[#1B3A8F] to-[#0F1C47] text-white rounded-sm flex items-center justify-center mb-8 shadow-md shadow-[#1B3A8F]/20 group-hover:scale-105 transition-transform duration-300 relative z-10">
-                    <srv.icon className="w-8 h-8 stroke-[1.5]" />
-                  </div>
-
-                  <h3 className="text-xl font-bold text-gray-900 mb-3 group-hover:text-[#1B3A8F] transition-colors relative z-10">
-                    {srv.title}
-                  </h3>
-                  <p className="text-gray-500 leading-relaxed mb-8 relative z-10">
-                    {srv.desc}
-                  </p>
-
-                  <div className="relative z-10 flex items-center justify-between pt-5 border-t border-gray-100">
-                    <span className="flex items-center text-sm font-bold text-[#1B3A8F] group-hover:text-[#C9973C] transition-colors">
-                      {t("home.detailsLabel")} <ChevronRight className="w-4 h-4 ml-1 group-hover:translate-x-1 transition-transform duration-300" />
+                    {/* Number watermark — editorial magazine cue */}
+                    <span className="absolute top-4 right-6 text-6xl font-black text-gray-50 select-none leading-none">
+                      {String(idx + 1).padStart(2, "0")}
                     </span>
-                    <span className="w-8 h-8 rounded-full bg-[#F4F6F9] flex items-center justify-center group-hover:bg-[#C9973C] transition-colors duration-300">
-                      <ArrowRight className="w-3.5 h-3.5 text-[#1B3A8F] group-hover:text-white transition-colors" />
-                    </span>
-                  </div>
+
+                    <div className="w-16 h-16 bg-gradient-to-br from-[#1B3A8F] to-[#0F1C47] text-white rounded-sm flex items-center justify-center mb-8 shadow-md shadow-[#1B3A8F]/20 group-hover:scale-105 transition-transform duration-300 relative z-10">
+                      <srv.icon className="w-8 h-8 stroke-[1.5]" />
+                    </div>
+
+                    <h3 className="text-xl font-bold text-gray-900 mb-3 group-hover:text-[#1B3A8F] transition-colors relative z-10">
+                      {srv.title}
+                    </h3>
+                    <p className="text-gray-500 leading-relaxed mb-8 relative z-10">
+                      {srv.desc}
+                    </p>
+
+                    <div className="relative z-10 flex items-center justify-between pt-5 border-t border-gray-100">
+                      <span className="flex items-center text-sm font-bold text-[#1B3A8F] group-hover:text-[#C9973C] transition-colors">
+                        {t("home.detailsLabel")} <ChevronRight className="w-4 h-4 ml-1 group-hover:translate-x-1 transition-transform duration-300" />
+                      </span>
+                      <span className="w-8 h-8 rounded-full bg-[#F4F6F9] flex items-center justify-center group-hover:bg-[#C9973C] transition-colors duration-300">
+                        <ArrowRight className="w-3.5 h-3.5 text-[#1B3A8F] group-hover:text-white transition-colors" />
+                      </span>
+                    </div>
+                  </Link>
                 </motion.div>
               ))}
             </motion.div>
@@ -502,8 +509,7 @@ export default function HomePage() {
           <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <motion.div
               initial="hidden"
-              whileInView="visible"
-              viewport={{ once: true, margin: "-100px" }}
+              animate="visible"
               variants={fadeIn}
               className="text-center mb-16"
             >
@@ -519,8 +525,7 @@ export default function HomePage() {
 
             <motion.div
               initial="hidden"
-              whileInView="visible"
-              viewport={{ once: true, margin: "-50px" }}
+              animate="visible"
               variants={staggerContainer}
               className="grid md:grid-cols-3 gap-8"
             >
@@ -553,8 +558,7 @@ export default function HomePage() {
           <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <motion.div
               initial="hidden"
-              whileInView="visible"
-              viewport={{ once: true, margin: "-100px" }}
+              animate="visible"
               variants={fadeIn}
               className="text-center mb-16"
             >
@@ -570,8 +574,7 @@ export default function HomePage() {
 
             <motion.div
               initial="hidden"
-              whileInView="visible"
-              viewport={{ once: true, margin: "-50px" }}
+              animate="visible"
               variants={staggerContainer}
               className="relative grid md:grid-cols-4 gap-10 md:gap-6"
             >
@@ -612,8 +615,7 @@ export default function HomePage() {
           <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <motion.div
               initial="hidden"
-              whileInView="visible"
-              viewport={{ once: true, margin: "-100px" }}
+              animate="visible"
               variants={fadeIn}
               className="mb-16 flex flex-col md:flex-row md:items-end justify-between gap-8"
             >
@@ -636,8 +638,7 @@ export default function HomePage() {
             ) : (
               <motion.div
                 initial="hidden"
-                whileInView="visible"
-                viewport={{ once: true, margin: "-50px" }}
+                animate="visible"
                 variants={staggerContainer}
                 className="grid md:grid-cols-3 gap-6"
               >
@@ -708,8 +709,7 @@ export default function HomePage() {
           <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <motion.div
               initial="hidden"
-              whileInView="visible"
-              viewport={{ once: true, margin: "-100px" }}
+              animate="visible"
               variants={fadeIn}
               className="mb-16 flex flex-col md:flex-row md:items-end justify-between gap-8"
             >
@@ -732,8 +732,7 @@ export default function HomePage() {
             ) : (
               <motion.div
                 initial="hidden"
-                whileInView="visible"
-                viewport={{ once: true, margin: "-50px" }}
+                animate="visible"
                 variants={staggerContainer}
                 className="grid md:grid-cols-3 gap-6"
               >
@@ -787,8 +786,7 @@ export default function HomePage() {
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <motion.div 
               initial="hidden"
-              whileInView="visible"
-              viewport={{ once: true }}
+              animate="visible"
               variants={fadeIn}
               className="bg-[#0F1C47] rounded-sm overflow-hidden flex flex-col lg:flex-row relative"
             >
@@ -858,8 +856,7 @@ export default function HomePage() {
           <div className="absolute inset-0 bg-gradient-to-r from-[#0F1C47] via-[#0F1C47]/70 to-[#0F1C47]/40 pointer-events-none" />
           <motion.div
             initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true, amount: 0.4 }}
+            animate="visible"
             variants={fadeIn}
             className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24 flex flex-col lg:flex-row items-center justify-between gap-10"
           >

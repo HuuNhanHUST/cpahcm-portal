@@ -65,8 +65,15 @@ describe('ForumService', () => {
         ForumService,
         { provide: PrismaService, useValue: prisma },
         // getOrSet(key, ttl, fn) chỉ cần gọi thẳng fn() bỏ qua cache — đủ để test logic thật
-        // bên trong service mà không cần Redis thật chạy trong unit test.
-        { provide: RedisService, useValue: { getOrSet: jest.fn((_k: string, _t: number, fn: () => unknown) => fn()) } },
+        // bên trong service mà không cần Redis thật chạy trong unit test. delByPrefix chỉ cần
+        // là no-op — các test dưới đây không assert việc cache có bị xoá đúng hay không.
+        {
+          provide: RedisService,
+          useValue: {
+            getOrSet: jest.fn((_k: string, _t: number, fn: () => unknown) => fn()),
+            delByPrefix: jest.fn().mockResolvedValue(0),
+          },
+        },
       ],
     }).compile();
 

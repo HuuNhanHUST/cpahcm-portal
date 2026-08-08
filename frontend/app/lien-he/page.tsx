@@ -7,14 +7,16 @@ import Image from "next/image";
 import { MapPin, Phone, Mail, Clock, Send, CheckCircle2, AlertCircle, Headset, CalendarClock, ShieldCheck, Zap, Gift, ChevronDown } from "lucide-react";
 import { motion, useScroll, useTransform } from "framer-motion";
 import { API_BASE } from "../../lib/config";
+import { useLanguage } from "../../context/LanguageContext";
 
-// Hệ thống chi nhánh thật — đồng bộ với components/Footer.tsx (BRANCHES).
+// Hệ thống chi nhánh thật — đồng bộ với components/Footer.tsx (BRANCHES). Tên thành phố/địa chỉ
+// KHÔNG dịch (giữ nguyên tên riêng/địa chỉ thật dù đổi ngôn ngữ) — chỉ nhãn "(Trụ sở)" mới dịch.
 const BRANCHES = [
-  { label: "TP.HCM (Trụ sở)", address: "228 Phan Văn Hân, P.17, Q. Bình Thạnh" },
-  { label: "TP. Thủ Đức", address: "61/1 Đường số 23, P. Hiệp Bình Chánh" },
-  { label: "Hà Nội", address: "1A Ngõ 140 Trần Duy Hưng, Cầu Giấy" },
-  { label: "Bình Phước", address: "KCN Minh Hưng – Hàn Quốc, Chơn Thành" },
-  { label: "Đắk Nông", address: "201 đường 23/3, Thị xã Gia Nghĩa" },
+  { city: "TP.HCM", isHq: true, address: "228 Phan Văn Hân, P.17, Q. Bình Thạnh" },
+  { city: "TP. Thủ Đức", isHq: false, address: "61/1 Đường số 23, P. Hiệp Bình Chánh" },
+  { city: "Hà Nội", isHq: false, address: "1A Ngõ 140 Trần Duy Hưng, Cầu Giấy" },
+  { city: "Bình Phước", isHq: false, address: "KCN Minh Hưng – Hàn Quốc, Chơn Thành" },
+  { city: "Đắk Nông", isHq: false, address: "201 đường 23/3, Thị xã Gia Nghĩa" },
 ];
 
 // Nhúng Google Maps không cần API key — dùng dạng "?q=<địa chỉ>&output=embed".
@@ -23,33 +25,36 @@ const MAP_EMBED_SRC =
   encodeURIComponent("61/1 Đường số 23, Phường Hiệp Bình, TP.HCM, Việt Nam") +
   "&output=embed";
 
-const QUICK_CONTACTS = [
-  { icon: Phone, label: "Hotline 24/7", value: "1900 0380", href: "tel:19000380" },
-  { icon: Mail, label: "Email tư vấn", value: "info@cpahcm.com.vn", href: "mailto:info@cpahcm.com.vn" },
-  { icon: CalendarClock, label: "Đặt lịch tư vấn", value: "Điền form bên dưới", href: "#contact-form" },
-];
-
-const COMMITMENTS = [
-  { icon: Zap, title: "Phản hồi nhanh", desc: "Liên hệ lại trong 15-30 phút, chậm nhất trong ngày làm việc kế tiếp." },
-  { icon: Gift, title: "Tư vấn miễn phí", desc: "Đánh giá sơ bộ nhu cầu và báo giá không phát sinh chi phí." },
-  { icon: ShieldCheck, title: "Bảo mật tuyệt đối", desc: "Thông tin doanh nghiệp được bảo vệ theo chuẩn ISO 27001:2022." },
-];
-
-const FAQS = [
-  { q: "Chi phí tư vấn ban đầu có mất phí không?", a: "Hoàn toàn miễn phí. CPA HCM tư vấn sơ bộ và báo giá ngay trong lần liên hệ đầu tiên, không phát sinh chi phí ẩn." },
-  { q: "Sau khi gửi yêu cầu, bao lâu thì được phản hồi?", a: "Trong vòng 15-30 phút trong giờ hành chính (Thứ 2 - Thứ 7). Yêu cầu gửi ngoài giờ sẽ được phản hồi chậm nhất vào đầu giờ làm việc kế tiếp." },
-  { q: "CPA HCM có phục vụ doanh nghiệp ở tỉnh khác ngoài TP.HCM không?", a: "Có. Ngoài trụ sở TP.HCM, chúng tôi có văn phòng tại Hà Nội, Bình Phước, Đắk Nông và phục vụ khách hàng toàn quốc qua hình thức tư vấn trực tuyến." },
-  { q: "Thông tin doanh nghiệp cung cấp có được bảo mật không?", a: "Tuyệt đối. CPA HCM tuân thủ tiêu chuẩn ISO 27001:2022 về an toàn thông tin và cam kết không chia sẻ dữ liệu khách hàng cho bất kỳ bên thứ ba nào." },
-  { q: "Tôi cần chuẩn bị giấy tờ gì trước buổi tư vấn?", a: "Không bắt buộc. Bạn chỉ cần cung cấp thông tin liên hệ và mô tả sơ bộ nhu cầu — đội ngũ CPA HCM sẽ hướng dẫn cụ thể hồ sơ cần chuẩn bị sau khi tiếp nhận yêu cầu." },
-];
-
 export default function ContactPage() {
+  const { t } = useLanguage();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
   const heroRef = useRef<HTMLDivElement>(null);
   const { scrollYProgress } = useScroll({ target: heroRef, offset: ["start start", "end start"] });
   const bgY = useTransform(scrollYProgress, [0, 1], ["0%", "25%"]);
+
+  // Giá trị "service" gửi lên backend giữ CỐ ĐỊNH tiếng Việt bất kể ngôn ngữ hiển thị — nhân
+  // viên CPA HCM đọc lead luôn bằng tiếng Việt, chỉ nhãn hiển thị trên form mới đổi theo t().
+  const QUICK_CONTACTS = [
+    { icon: Phone, label: t("contact.hotline"), value: "1900 0380", href: "tel:19000380" },
+    { icon: Mail, label: t("contact.emailConsult"), value: "info@cpahcm.com.vn", href: "mailto:info@cpahcm.com.vn" },
+    { icon: CalendarClock, label: t("contact.bookConsult"), value: t("contact.fillFormBelow"), href: "#contact-form" },
+  ];
+
+  const COMMITMENTS = [
+    { icon: Zap, title: t("contact.commit1Title"), desc: t("contact.commit1Desc") },
+    { icon: Gift, title: t("contact.commit2Title"), desc: t("contact.commit2Desc") },
+    { icon: ShieldCheck, title: t("contact.commit3Title"), desc: t("contact.commit3Desc") },
+  ];
+
+  const FAQS = [
+    { q: t("contact.faq1Q"), a: t("contact.faq1A") },
+    { q: t("contact.faq2Q"), a: t("contact.faq2A") },
+    { q: t("contact.faq3Q"), a: t("contact.faq3A") },
+    { q: t("contact.faq4Q"), a: t("contact.faq4A") },
+    { q: t("contact.faq5Q"), a: t("contact.faq5A") },
+  ];
 
   const [form, setForm] = useState({
     companyName: "",
@@ -111,13 +116,13 @@ export default function ContactPage() {
         });
       } else {
         const json = await res.json();
-        setErrorMsg(json.message || "Gửi yêu cầu thất bại. Vui lòng thử lại!");
+        setErrorMsg(json.message || t("contact.errorDefault"));
       }
     } catch (err) {
       // Mất mạng/không kết nối được server — PHẢI báo lỗi thật, không được giả lập thành công
       // (bug trước đây: hiện confetti + "đã gửi" dù request chưa hề tới server, khiến khách hàng
       // tưởng đã gửi yêu cầu tư vấn thành công trong khi CPA HCM không nhận được gì cả).
-      setErrorMsg("Không thể kết nối tới máy chủ. Vui lòng kiểm tra mạng và thử lại, hoặc gọi hotline.");
+      setErrorMsg(t("contact.errorNetwork"));
     } finally {
       setLoading(false);
     }
@@ -149,15 +154,15 @@ export default function ContactPage() {
           <motion.div initial={{ opacity: 0 }} animate={mounted ? { opacity: 1 } : {}} transition={{ duration: 0.5 }}>
             <div className="flex items-center gap-3 mb-5">
               <Headset className="w-4 h-4 text-[#C9973C]" />
-              <span className="text-[#C9973C] text-xs font-bold uppercase tracking-[0.2em]">Đội Ngũ Chuyên Gia CPA HCM</span>
+              <span className="text-[#C9973C] text-xs font-bold uppercase tracking-[0.2em]">{t("contact.heroBadge")}</span>
             </div>
 
             <h1 className="text-[clamp(2.25rem,5.5vw,4.5rem)] font-black leading-[1.05] text-white mb-6 tracking-tight max-w-4xl">
-              Liên Hệ & Đặt Lịch Tư Vấn
+              {t("contact.heroTitle")}
             </h1>
 
             <p className="text-blue-200/80 text-base md:text-lg max-w-xl leading-relaxed font-light">
-              Đội ngũ Kiểm toán viên và Chuyên gia Thuế của CPA HCM luôn sẵn sàng hỗ trợ giải đáp mọi thắc mắc và lập phương án tư vấn tối ưu nhất.
+              {t("contact.heroSubtitle")}
             </p>
           </motion.div>
         </div>
@@ -168,9 +173,11 @@ export default function ContactPage() {
         >
           <div className="grid grid-cols-2 lg:grid-cols-5 divide-x divide-y lg:divide-y-0 divide-white/10 bg-white/5 backdrop-blur-md">
             {BRANCHES.map((b) => (
-              <div key={b.label} className="py-6 px-4 text-center">
+              <div key={b.city} className="py-6 px-4 text-center">
                 <MapPin className="w-4 h-4 text-[#C9973C] mx-auto mb-2 opacity-80" />
-                <div className="text-xs font-bold text-white mb-1">{b.label}</div>
+                <div className="text-xs font-bold text-white mb-1">
+                  {b.city}{b.isHq ? ` ${t("contact.branchHqSuffix")}` : ""}
+                </div>
                 <div className="text-[10px] text-blue-300 leading-snug">{b.address}</div>
               </div>
             ))}
@@ -205,7 +212,7 @@ export default function ContactPage() {
         {/* Contact Info Cards */}
         <div className="lg:col-span-4 flex flex-col gap-6">
           <div className="bg-white p-8 border border-gray-200 shadow-sm">
-            <h3 className="text-lg font-black text-[#0F1C47] mb-6 border-b border-gray-100 pb-4 uppercase tracking-wider">Thông tin trụ sở chính</h3>
+            <h3 className="text-lg font-black text-[#0F1C47] mb-6 border-b border-gray-100 pb-4 uppercase tracking-wider">{t("contact.hqInfoTitle")}</h3>
 
             <div className="space-y-6">
               <div className="flex items-start gap-4">
@@ -213,7 +220,7 @@ export default function ContactPage() {
                   <MapPin className="w-5 h-5" />
                 </div>
                 <div>
-                  <p className="font-black text-[#0F1C47] text-xs uppercase tracking-wider">Trụ sở chính TP.HCM</p>
+                  <p className="font-black text-[#0F1C47] text-xs uppercase tracking-wider">{t("contact.hqLabel")}</p>
                   <p className="text-xs text-gray-600 mt-1 leading-relaxed">228 Phan Văn Hân, P.17, Q. Bình Thạnh, TP. Hồ Chí Minh</p>
                 </div>
               </div>
@@ -223,7 +230,7 @@ export default function ContactPage() {
                   <Phone className="w-5 h-5" />
                 </div>
                 <div>
-                  <p className="font-black text-[#0F1C47] text-xs uppercase tracking-wider">Hotline 24/7</p>
+                  <p className="font-black text-[#0F1C47] text-xs uppercase tracking-wider">{t("contact.hotline")}</p>
                   <a href="tel:19000380" className="text-base text-[#1B3A8F] hover:underline font-black mt-0.5 inline-block">1900 0380</a>
                 </div>
               </div>
@@ -233,7 +240,7 @@ export default function ContactPage() {
                   <Mail className="w-5 h-5" />
                 </div>
                 <div>
-                  <p className="font-black text-[#0F1C47] text-xs uppercase tracking-wider">Email tư vấn</p>
+                  <p className="font-black text-[#0F1C47] text-xs uppercase tracking-wider">{t("contact.emailConsult")}</p>
                   <a href="mailto:info@cpahcm.com.vn" className="text-xs text-[#1B3A8F] hover:underline font-bold mt-0.5 inline-block">info@cpahcm.com.vn</a>
                 </div>
               </div>
@@ -243,21 +250,23 @@ export default function ContactPage() {
                   <Clock className="w-5 h-5" />
                 </div>
                 <div>
-                  <p className="font-black text-[#0F1C47] text-xs uppercase tracking-wider">Giờ làm việc</p>
-                  <p className="text-xs text-gray-600 mt-1">Thứ 2 - Thứ 6: 08:00 - 17:30<br />Thứ 7: 08:00 - 12:00</p>
+                  <p className="font-black text-[#0F1C47] text-xs uppercase tracking-wider">{t("contact.workingHoursLabel")}</p>
+                  <p className="text-xs text-gray-600 mt-1">{t("contact.workingHoursValue")}<br />{t("contact.workingHoursValue2")}</p>
                 </div>
               </div>
             </div>
           </div>
 
           <div className="bg-white p-8 border border-gray-200 shadow-sm">
-            <h3 className="text-lg font-black text-[#0F1C47] mb-6 border-b border-gray-100 pb-4 uppercase tracking-wider">Hệ Thống Chi Nhánh</h3>
+            <h3 className="text-lg font-black text-[#0F1C47] mb-6 border-b border-gray-100 pb-4 uppercase tracking-wider">{t("contact.branchSystemTitle")}</h3>
             <ul className="space-y-4">
               {BRANCHES.map((b) => (
-                <li key={b.label} className="flex items-start gap-3">
+                <li key={b.city} className="flex items-start gap-3">
                   <MapPin className="w-4 h-4 text-[#C9973C] shrink-0 mt-0.5" />
                   <div>
-                    <p className="font-black text-[#0F1C47] text-xs">{b.label}</p>
+                    <p className="font-black text-[#0F1C47] text-xs">
+                      {b.city}{b.isHq ? ` ${t("contact.branchHqSuffix")}` : ""}
+                    </p>
                     <p className="text-xs text-gray-600 leading-relaxed">{b.address}</p>
                   </div>
                 </li>
@@ -266,7 +275,7 @@ export default function ContactPage() {
           </div>
 
           <div className="bg-white p-2 border border-gray-200 shadow-sm">
-            <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider px-2 py-2">Chi nhánh TP. Thủ Đức trên bản đồ</p>
+            <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider px-2 py-2">{t("contact.mapCaption")}</p>
             <div className="h-64 overflow-hidden">
               <iframe
                 src={MAP_EMBED_SRC}
@@ -286,8 +295,8 @@ export default function ContactPage() {
             đẩy lệch hàng nếu chỉ thêm 1 item col-span-8 rời rạc thứ 3 vào grid 12 cột). */}
         <div className="lg:col-span-8 flex flex-col gap-6">
         <div id="contact-form" className="scroll-mt-28 bg-white p-8 md:p-12 border border-gray-200 shadow-sm">
-          <h2 className="text-2xl font-black text-[#0F1C47] mb-2 uppercase tracking-tight">Gửi Yêu Cầu Báo Giá & Tư Vấn</h2>
-          <p className="text-gray-500 mb-8 text-sm font-light">Vui lòng điền thông tin bên dưới, thông tin sẽ được gửi trực tiếp đến bộ phận nghiệp vụ CPA HCM.</p>
+          <h2 className="text-2xl font-black text-[#0F1C47] mb-2 uppercase tracking-tight">{t("contact.formTitle")}</h2>
+          <p className="text-gray-500 mb-8 text-sm font-light">{t("contact.formSubtitle")}</p>
 
           {errorMsg && (
             <div className="p-4 mb-6 bg-red-50 border border-red-200 rounded-lg flex items-center gap-3 text-red-700 text-xs font-semibold">
@@ -299,115 +308,115 @@ export default function ContactPage() {
           {submitted ? (
             <div className="p-10 bg-green-50 border border-green-200 text-center rounded-xl space-y-4">
               <CheckCircle2 className="w-14 h-14 text-green-600 mx-auto" />
-              <h3 className="text-xl font-black text-green-900">Gửi yêu cầu tư vấn thành công!</h3>
+              <h3 className="text-xl font-black text-green-900">{t("contact.successTitle")}</h3>
               <p className="text-sm text-green-700 max-w-md mx-auto leading-relaxed">
-                Cảm ơn bạn đã liên hệ. Bộ phận Chăm sóc khách hàng CPA HCM sẽ gọi lại tư vấn và gửi báo giá chi tiết trong vòng 15-30 phút.
+                {t("contact.successDesc")}
               </p>
               <button
                 onClick={() => setSubmitted(false)}
                 className="mt-4 px-6 py-2.5 bg-[#0F1C47] text-white text-xs font-bold uppercase tracking-wider hover:bg-[#1B3A8F]"
               >
-                Gửi thêm yêu cầu mới
+                {t("contact.sendAnother")}
               </button>
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <label className="text-xs font-bold text-[#0F1C47] uppercase tracking-wider block mb-2">Tên công ty / Doanh nghiệp *</label>
+                  <label className="text-xs font-bold text-[#0F1C47] uppercase tracking-wider block mb-2">{t("contact.labelCompany")}</label>
                   <input
                     type="text"
                     required
                     value={form.companyName}
                     onChange={(e) => setForm({ ...form, companyName: e.target.value })}
                     className="w-full bg-[#F8F9FA] border border-gray-200 focus:border-[#1B3A8F] focus:ring-1 focus:ring-[#1B3A8F] p-3.5 text-xs text-gray-900 transition-all outline-none"
-                    placeholder="Công ty TNHH/CP..."
+                    placeholder={t("contact.placeholderCompany")}
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-bold text-[#0F1C47] uppercase tracking-wider block mb-2">Họ và tên người liên hệ *</label>
+                  <label className="text-xs font-bold text-[#0F1C47] uppercase tracking-wider block mb-2">{t("contact.labelContactName")}</label>
                   <input
                     type="text"
                     required
                     value={form.name}
                     onChange={(e) => setForm({ ...form, name: e.target.value })}
                     className="w-full bg-[#F8F9FA] border border-gray-200 focus:border-[#1B3A8F] focus:ring-1 focus:ring-[#1B3A8F] p-3.5 text-xs text-gray-900 transition-all outline-none"
-                    placeholder="Nguyễn Văn A"
+                    placeholder={t("contact.placeholderContactName")}
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <label className="text-xs font-bold text-[#0F1C47] uppercase tracking-wider block mb-2">Mã số thuế</label>
+                  <label className="text-xs font-bold text-[#0F1C47] uppercase tracking-wider block mb-2">{t("contact.labelTaxCode")}</label>
                   <input
                     type="text"
                     value={form.taxCode}
                     onChange={(e) => setForm({ ...form, taxCode: e.target.value })}
                     className="w-full bg-[#F8F9FA] border border-gray-200 focus:border-[#1B3A8F] focus:ring-1 focus:ring-[#1B3A8F] p-3.5 text-xs text-gray-900 transition-all outline-none"
-                    placeholder="0312345678"
+                    placeholder={t("contact.placeholderTaxCode")}
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-bold text-[#0F1C47] uppercase tracking-wider block mb-2">Địa chỉ công ty</label>
+                  <label className="text-xs font-bold text-[#0F1C47] uppercase tracking-wider block mb-2">{t("contact.labelAddress")}</label>
                   <input
                     type="text"
                     value={form.address}
                     onChange={(e) => setForm({ ...form, address: e.target.value })}
                     className="w-full bg-[#F8F9FA] border border-gray-200 focus:border-[#1B3A8F] focus:ring-1 focus:ring-[#1B3A8F] p-3.5 text-xs text-gray-900 transition-all outline-none"
-                    placeholder="123 Nguyễn Huệ, Q.1, TP.HCM"
+                    placeholder={t("contact.placeholderAddress")}
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <label className="text-xs font-bold text-[#0F1C47] uppercase tracking-wider block mb-2">Số điện thoại *</label>
+                  <label className="text-xs font-bold text-[#0F1C47] uppercase tracking-wider block mb-2">{t("contact.labelPhone")}</label>
                   <input
                     type="tel"
                     required
                     value={form.phone}
                     onChange={(e) => setForm({ ...form, phone: e.target.value })}
                     className="w-full bg-[#F8F9FA] border border-gray-200 focus:border-[#1B3A8F] focus:ring-1 focus:ring-[#1B3A8F] p-3.5 text-xs text-gray-900 transition-all outline-none"
-                    placeholder="0901234567"
+                    placeholder={t("contact.placeholderPhone")}
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-bold text-[#0F1C47] uppercase tracking-wider block mb-2">Email *</label>
+                  <label className="text-xs font-bold text-[#0F1C47] uppercase tracking-wider block mb-2">{t("contact.labelEmail")}</label>
                   <input
                     type="email"
                     required
                     value={form.email}
                     onChange={(e) => setForm({ ...form, email: e.target.value })}
                     className="w-full bg-[#F8F9FA] border border-gray-200 focus:border-[#1B3A8F] focus:ring-1 focus:ring-[#1B3A8F] p-3.5 text-xs text-gray-900 transition-all outline-none"
-                    placeholder="email@doanhnghiep.com"
+                    placeholder={t("contact.placeholderEmail")}
                   />
                 </div>
               </div>
 
               <div>
-                <label className="text-xs font-bold text-[#0F1C47] uppercase tracking-wider block mb-2">Dịch vụ quan tâm *</label>
+                <label className="text-xs font-bold text-[#0F1C47] uppercase tracking-wider block mb-2">{t("contact.labelServiceInterest")}</label>
                 <select
                   value={form.service}
                   onChange={(e) => setForm({ ...form, service: e.target.value })}
                   className="w-full bg-[#F8F9FA] border border-gray-200 focus:border-[#1B3A8F] focus:ring-1 focus:ring-[#1B3A8F] p-3.5 text-xs text-gray-900 transition-all outline-none"
                 >
-                  <option value="Kiểm toán Báo cáo tài chính">Kiểm toán Báo cáo tài chính độc lập</option>
-                  <option value="Dịch vụ Kế toán trọn gói">Dịch vụ Kế toán trọn gói & Sổ sách</option>
-                  <option value="Tư vấn Thuế & Chuyển giá">Tư vấn Thuế & Lập hồ sơ Chuyển giá</option>
-                  <option value="Thành lập & Tái cấu trúc">Thành lập Doanh nghiệp & Tái cấu trúc</option>
-                  <option value="Đào tạo CPA Academy">Đào tạo Luyện thi CPA / Kế toán trưởng</option>
+                  <option value="Kiểm toán Báo cáo tài chính">{t("contact.serviceOpt1")}</option>
+                  <option value="Dịch vụ Kế toán trọn gói">{t("contact.serviceOpt2")}</option>
+                  <option value="Tư vấn Thuế & Chuyển giá">{t("contact.serviceOpt3")}</option>
+                  <option value="Thành lập & Tái cấu trúc">{t("contact.serviceOpt4")}</option>
+                  <option value="Đào tạo CPA Academy">{t("contact.serviceOpt5")}</option>
                 </select>
               </div>
 
               <div>
-                <label className="text-xs font-bold text-[#0F1C47] uppercase tracking-wider block mb-2">Nội dung chi tiết yêu cầu</label>
+                <label className="text-xs font-bold text-[#0F1C47] uppercase tracking-wider block mb-2">{t("contact.labelMessage")}</label>
                 <textarea
                   rows={4}
                   value={form.message}
                   onChange={(e) => setForm({ ...form, message: e.target.value })}
                   className="w-full bg-[#F8F9FA] border border-gray-200 focus:border-[#1B3A8F] focus:ring-1 focus:ring-[#1B3A8F] p-3.5 text-xs text-gray-900 transition-all outline-none resize-none"
-                  placeholder="Mô tả tóm tắt quy mô doanh nghiệp và yêu cầu của bạn..."
+                  placeholder={t("contact.placeholderMessage")}
                 />
               </div>
 
@@ -416,7 +425,7 @@ export default function ContactPage() {
                 disabled={loading}
                 className="w-full md:w-auto px-8 py-4 bg-[#C9973C] hover:bg-[#0F1C47] text-white font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all duration-300 shadow-md"
               >
-                {loading ? "Đang gửi..." : "Gửi Yêu Cầu Tư Vấn"}
+                {loading ? t("contact.submitting") : t("contact.submitBtn")}
                 <Send className="w-4 h-4" />
               </button>
             </form>
@@ -428,7 +437,7 @@ export default function ContactPage() {
         <div className="bg-[#0F1C47] p-8 md:p-10 relative overflow-hidden">
           <div className="absolute inset-0 opacity-[0.06] pointer-events-none"
             style={{ backgroundImage: "linear-gradient(#C9973C 1px, transparent 1px), linear-gradient(90deg, #C9973C 1px, transparent 1px)", backgroundSize: "40px 40px" }} />
-          <h3 className="relative z-10 text-sm font-black text-white uppercase tracking-wider mb-6">Cam Kết Khi Liên Hệ CPA HCM</h3>
+          <h3 className="relative z-10 text-sm font-black text-white uppercase tracking-wider mb-6">{t("contact.commitmentsTitle")}</h3>
           <div className="relative z-10 grid sm:grid-cols-3 gap-6">
             {COMMITMENTS.map((c) => (
               <div key={c.title} className="flex flex-col gap-3">
@@ -450,7 +459,7 @@ export default function ContactPage() {
       <div className="bg-white border-t border-gray-100">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
           <div className="text-center mb-10">
-            <h2 className="text-2xl md:text-3xl font-black text-[#0F1C47] uppercase tracking-tight">Câu Hỏi Thường Gặp</h2>
+            <h2 className="text-2xl md:text-3xl font-black text-[#0F1C47] uppercase tracking-tight">{t("contact.faqTitle")}</h2>
             <div className="w-16 h-1 bg-[#C9973C] mx-auto mt-4"></div>
           </div>
           <div className="space-y-3">
